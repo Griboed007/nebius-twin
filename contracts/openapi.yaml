@@ -1,0 +1,122 @@
+openapi: 3.1.0
+info:
+  title: Semantic Twin Inference API
+  version: 1.0.0
+  description: >
+    Serves trajectory predictions and SPARQL queries over the SAREF/RDF twin.
+    Deployed as a Nebius Serverless Endpoint (container port 8080, --auth token).
+    SOURCE OF TRUTH for the endpoint boundary. Implementers of services/twin_api
+    MUST satisfy this schema; contract tests assert it. Do not edit here without
+    an OpenSpec proposal.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      summary: Liveness probe (no auth)
+      security: []
+      responses:
+        "200":
+          description: Service is up and the model + twin are loaded
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, model_loaded, twin_loaded]
+                properties:
+                  status: { type: string, enum: [ok] }
+                  model_loaded: { type: boolean }
+                  twin_loaded: { type: boolean }
+  /predict:
+    post:
+      summary: Predict the next HORIZON states for one agent and score anomaly
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, history]
+              properties:
+                agent_id: { type: string }
+                history:
+                  type: array
+                  description: rows of [t, lat, lon, vlat, vlon], len >= HISTORY_LEN
+                  items:
+                    type: array
+                    items: { type: number }
+                    minItems: 5
+                    maxItems: 5
+      responses:
+        "200":
+          description: Prediction with anomaly judgement
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [agent_id, prediction, anomaly_score, is_anomaly]
+                properties:
+                  agent_id: { type: string }
+                  prediction:
+                    type: array
+                    items:
+                      type: array
+                      items: { type: number }
+                      minItems: 5
+                      maxItems: 5
+                  anomaly_score: { type: number, minimum: 0, maximum: 1 }
+                  is_anomaly: { type: boolean }
+        "401": { description: Missing or invalid bearer token }
+        "422": { description: History shorter than HISTORY_LEN or malformed }
+  /twin/state:
+    get:
+      summary: Latest known + predicted state for an agent from the twin graph
+      parameters:
+        - in: query
+          name: agent_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Most recent observation and prediction for the agent
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [agent_id, latest, predicted]
+                properties:
+                  agent_id: { type: string }
+                  latest: { type: object, nullable: true }
+                  predicted: { type: object, nullable: true }
+        "404": { description: Unknown agent_id }
+  /twin/sparql:
+    post:
+      summary: Run a read-only SPARQL SELECT/ASK over the twin graph
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string }
+      responses:
+        "200":
+          description: SPARQL JSON results bindings
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [head, results]
+                properties:
+                  head: { type: object }
+                  results: { type: object }
+        "400": { description: Non-SELECT/ASK query or parse error }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
