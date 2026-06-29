@@ -1,10 +1,9 @@
-# SAREF / RDF mapping contract (twin layer)
+# SAREF / RDF mapping contract (twin layer) — v2
 
 SOURCE OF TRUTH for how `EnrichedTrajectory` becomes an RDF graph and what
-SPARQL must return. The implementer of `src/twin/` satisfies this; contract
-tests assert the triples below exist. Verify exact SAREF term IRIs against the
-live ontology via Context7 before finalising — flagged in the proposal's
-"honest hard parts".
+SPARQL must return. Corrected per independent verification against SAREF core
+v3.2.1 / v4.1.1: `saref:Measurement` is deprecated in favour of
+`saref:Observation` (SOSA/SSN convergence). Use `saref:Observation`.
 
 ## Namespaces
 
@@ -15,37 +14,41 @@ live ontology via Context7 before finalising — flagged in the proposal's
 | `xsd`   | `http://www.w3.org/2001/XMLSchema#` |
 | `ex`    | `http://example.org/twin/` |
 
+(Optional, if adopting SAREF4AUTO — see proposal 031 Design:
+`s4auto` = `https://saref.etsi.org/saref4auto/`.)
+
 ## Entities
 
 **Agent** — one tracked vehicle.
 - `ex:Agent_{agent_id}` `a` `saref:Device` .
 - `ex:Agent_{agent_id}` `ex:agentId` `"{agent_id}"^^xsd:string` .
 
-**Observation** — one observed or predicted state.
-- `ex:Obs_{agent_id}_{t}` `a` `saref:Measurement` .
+**Observation** — one observed or predicted state. (Was `saref:Measurement`.)
+- `ex:Obs_{agent_id}_{t}` `a` `saref:Observation` .
 - `saref:hasTimestamp` `"{iso8601}"^^xsd:dateTime` .
+  (SOSA-convergent alternatives if desired: `saref:hasResultTime` /
+  `saref:hasPhenomenonTime`. `hasTimestamp` retained here for minimal change.)
 - `geo:lat` `"{lat}"^^xsd:double` ; `geo:long` `"{lon}"^^xsd:double` .
 - `ex:observedAgent` `ex:Agent_{agent_id}` .            # provenance link
 - `ex:kind` `"observed"` or `"predicted"` .
 - (observed only) `ex:anomalyScore` `"{score}"^^xsd:double` ; `ex:isAnomaly` `"{bool}"^^xsd:boolean` .
 
-## Provenance invariant (the verification crux)
+## Provenance invariant (the verification crux) — UNCHANGED
 
-Every `saref:Measurement` node MUST carry exactly one `ex:observedAgent` whose
-object is a declared `saref:Device`. There SHALL be zero orphan measurements
-(a node with no parent agent) and zero predicted measurements whose `agent_id`
-has no observed measurements in the same graph. This is the structural analogue
-of deckgen's "every figure resolves to a ledger row, zero dangling," and it is
-what the Strategist checks read-only with SPARQL after the batch job runs.
+Every `saref:Observation` node MUST carry exactly one `ex:observedAgent` whose
+object is a declared `saref:Device`. Zero orphan observations; zero predicted
+observations whose `agent_id` has no observed observations in the same graph.
+Enforced at build time so the orphan-check query is empty by construction.
 
 ## Required SPARQL behaviours (acceptance queries)
 
-1. **Anomaly rollup** — count anomalous observations per agent:
+1. **Anomaly rollup** — count anomalous observations per agent (unchanged):
    `SELECT ?a (COUNT(?o) AS ?n) WHERE { ?o ex:observedAgent ?a ; ex:isAnomaly true } GROUP BY ?a`
-2. **Geofence-style filter** — predicted points outside a lat/lon box:
+2. **Geofence-style filter** — predicted points outside a lat/lon box (unchanged):
    a SELECT over `ex:kind "predicted"` filtered by `geo:lat`/`geo:long` bounds.
-3. **Orphan check (MUST return empty)**:
-   `SELECT ?o WHERE { ?o a saref:Measurement . FILTER NOT EXISTS { ?o ex:observedAgent ?a } }`
+3. **Orphan check (MUST return empty)** — now types on `saref:Observation`:
+   `SELECT ?o WHERE { ?o a saref:Observation . FILTER NOT EXISTS { ?o ex:observedAgent ?a } }`
 
 The endpoint's `/twin/sparql` MUST accept arbitrary read-only SELECT/ASK and
-reject UPDATE/INSERT/DELETE with HTTP 400.
+reject UPDATE/INSERT/DELETE **and any SERVICE (federation) clause** — see
+proposal 050's SSRF requirement.
