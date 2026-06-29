@@ -83,6 +83,12 @@ def geofence_query(
     str
         SPARQL SELECT query string.
     """
+    # Coerce to plain float: a numpy float64 / Decimal bound (e.g. from
+    # pandas.quantile(), as the batch job and endpoint pass) reprs as
+    # "np.float64(...)" / "Decimal('...')", which is invalid SPARQL and would be
+    # rejected at parse time. float() guarantees a clean numeric literal.
+    lat_min, lat_max = float(lat_min), float(lat_max)
+    lon_min, lon_max = float(lon_min), float(lon_max)
     return (
         "PREFIX ex: <http://example.org/twin/> "
         "PREFIX geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> "
