@@ -1,0 +1,47 @@
+# Part 040 — Nebius Serverless Job (batch enrichment) LIVE proof
+# Captured: 2026-06-30   (no secrets)
+
+Job ID:   aijob-e00t6x5fheagf8vg4z   (name: twin-batch-enrich)
+Platform: cpu-e2 / 2vcpu-8gb   Subnet: vpcsubnet-e00dv0m9v2j5r5f4bm
+Image:    cr.eu-north1.nebius.cloud/e00y0bsxm2b24wq5ra/twin-job:latest
+          digest sha256:5c8a938e7b51bdf226268ef640f67df71d5f88134756c7041a42a6363e65419e
+Mount:    /data -> s3://twin-data (READ_WRITE)
+
+## nebius ai job get (state)
+    Name:     twin-batch-enrich
+    State:    COMPLETED
+    Created:  6 minutes ago
+    Platform:  cpu-e2
+
+## nebius ai job logs aijob-e00t6x5fheagf8vg4z
+  2026-06-30 11:04:44,348 INFO __main__: INPUT_URI=/data/synthetic.parquet
+  2026-06-30 11:04:44,348 INFO __main__: OUTPUT_URI=/data/out
+  2026-06-30 11:04:44,348 INFO __main__: MODEL_PATH=None
+  2026-06-30 11:04:44,348 INFO __main__: Residual model: _ZeroResidual
+  2026-06-30 11:04:44,454 INFO __main__: Ground-truth labels detected (is_anomaly_gt / kind).
+  2026-06-30 11:04:44,455 INFO __main__: Processing 10 agents
+  2026-06-30 11:04:44,704 INFO __main__: Staged enriched.parquet (3000 rows, columns=['agent_id', 't', 'lat', 'lon', 'vlat', 'vlon', 'pred_lat', 'pred_lon', 'anomaly_score', 'is_anomaly', 'kind'])
+  2026-06-30 11:04:46,174 INFO __main__: Staged twin.ttl (24380 triples)
+  2026-06-30 11:04:47,428 INFO __main__: Copied enriched.parquet -> /data/out/enriched.parquet
+  2026-06-30 11:04:47,661 INFO __main__: Copied twin.ttl -> /data/out/twin.ttl
+  2026-06-30 11:04:47,885 INFO __main__: Copied metrics.json -> /data/out/metrics.json
+  2026-06-30 11:04:47,885 INFO __main__: Wrote metrics.json: {'agent_count': 10, 'observation_count': 3000, 'anomaly_count': 218, 'runtime_seconds': 1.922, 'roc_auc': 0.8247}
+
+## cloud artifacts written to s3://twin-data/out/
+  enriched.parquet  166370 bytes
+  twin.ttl          906732 bytes  (24380 triples)
+  metrics.json         125 bytes
+
+## metrics.json (downloaded from bucket)
+  {
+    "agent_count": 10,
+    "observation_count": 3000,
+    "anomaly_count": 218,
+    "runtime_seconds": 1.922,
+    "roc_auc": 0.8247
+  }
+
+## Orphan-check verification on the CLOUD-produced twin.ttl (read-only)
+  saref:Observation nodes = 3060
+  saref:Measurement nodes = 0   (uses live SAREF term)
+  ORPHAN_CHECK_QUERY rows  = 0   (provenance invariant holds)

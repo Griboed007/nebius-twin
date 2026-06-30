@@ -1,0 +1,29 @@
+# Part A — Job run proof
+
+Job ID: aijob-e00r12a8n3tfa097mh   (name: spike-job)
+Platform: cpu-e2 / 2vcpu-8gb   Subnet: vpcsubnet-e00dv0m9v2j5r5f4bm
+Captured: 2026-06-29
+
+## nebius ai job get (state)
+  ID:       aijob-e00r12a8n3tfa097mh
+  Name:     spike-job
+  State:    COMPLETED
+  Command:  python
+  Args:     -c 'print("hello from nebius")'
+  Parent ID:         project-e00kaq71pr00hgwxhfyvnx
+
+## nebius ai job logs aijob-e00r12a8n3tfa097mh
+hello from nebius
+
+## Bucket mount proof (s3://twin-data -> /data)
+Second job 'spike-mount' (aijob-e00amp4k125eha89ax) mounted the bucket with
+--volume "s3://twin-data:/data:rw", wrote a file, and listed the mount:
+
+  State: COMPLETED
+  logs:  WROTE /data/spike_proof.txt ; ls /data = ['spike_proof.txt']
+
+Setup required for the mount (one-time):
+  - nebius iam v2 access-key create (service account dt-account, inline secret)
+  - keys written to ~/.aws/credentials  [default]
+  - ~/.aws/config: region=eu-north1, endpoint_url=https://storage.eu-north1.nebius.cloud
+All four Part-A elements (auth, logs, subnet, bucket mount) now proven.

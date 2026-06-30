@@ -11,9 +11,10 @@ requirements.lock
 # local planning / tooling — not part of the submission
 docs/blog.md
 docs/orchestration.md
+docs/platform-spike.md
 console-keys/
 INDEX.md
 CLAUDE.md
 openspec/
 .claude/
-docs/
+

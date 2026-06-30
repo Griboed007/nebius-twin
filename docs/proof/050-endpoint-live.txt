@@ -1,0 +1,108 @@
+# Part 050 — Nebius Serverless Endpoint (twin API) LIVE proof
+# Captured: 2026-06-30   (bearer token REDACTED everywhere)
+
+Endpoint ID: aiendpoint-e00xp4q8jcpkd84x39   (name: twin-api)   Platform: cpu-e2 / 2vcpu-8gb
+Image:   cr.eu-north1.nebius.cloud/e00y0bsxm2b24wq5ra/twin-api:latest
+         digest sha256:54967b5ec918043a02972c681ebb54c6fcec2493e24e89b8625bc0065643a468
+Public:  89.169.121.167:8080
+Tunnel:  https://port8080-mhpbfcwm22zbvq3.tunnel.applications.eu-north1.nebius.cloud
+Twin:    loaded from s3://twin-data/out/twin.ttl (mounted /data, written by job aijob-e00t6x5fheagf8vg4z)
+
+## GET /health  WITHOUT token  (platform auth enforced)
+  HTTP 401  (401 = auth required)
+
+## GET /health  WITH token
+  {"status":"ok","model_loaded":true,"twin_loaded":true}
+
+## POST /predict  WITH token  (12-pt history -> HORIZON=6 forward points)
+  {"agent_id":"agent_001","prediction":[[12.0,55.762,37.611999999999995,0.001000000000000038,0.001000000000000038],[13.0,55.763000000000005,37.613,0.001000000000000038,0.001000000000000038],[14.0,55.764,37.614,0.001000000000000038,0.001000000000000038],[15.0,55.765,37.614999999999995,0.001000000000000038,0.001000000000000038],[16.0,55.766000000000005,37.616,0.001000000000000038,0.001000000000000038],[17.0,55.767,37.617,0.001000000000000038,0.001000000000000038]],"anomaly_score":5.801557143508179e-13,"is_anomaly":false}
+
+## POST /twin/sparql  — anomaly rollup (per-agent anomalous-observation counts)
+  {
+      "head": {
+          "vars": [
+              "a",
+              "n"
+          ]
+      },
+      "results": {
+          "bindings": [
+              {
+                  "a": {
+                      "type": "literal",
+                      "value": "http://example.org/twin/Agent_agent_001"
+                  },
+                  "n": {
+                      "type": "literal",
+                      "value": "42"
+                  }
+              },
+              {
+                  "a": {
+                      "type": "literal",
+                      "value": "http://example.org/twin/Agent_agent_002"
+                  },
+                  "n": {
+                      "type": "literal",
+                      "value": "11"
+                  }
+              },
+              {
+                  "a": {
+                      "type": "literal",
+                      "value": "http://example.org/twin/Agent_agent_003"
+                  },
+                  "n": {
+                      "type": "literal",
+                      "value": "33"
+                  }
+              },
+              {
+                  "a": {
+                      "type": "literal",
+                      "value": "http://example.org/twin/Agent_agent_004"
+                  },
+                  "n": {
+                      "type": "literal",
+                      "value": "22"
+                  }
+              },
+              {
+                  "a": {
+                      "type": "literal",
+                      "value": "http://example.org/twin/Agent_agent_005"
+                  },
+                  "n": {
+                      "type": "literal",
+                      "value": "33"
+                  }
+              },
+              {
+                  "a": {
+                      "type": "literal",
+                      "value": "http://example.org/twin/Agent_agent_006"
+                  },
+                  "n": {
+                      "type": "literal",
+                      "value": "44"
+                  }
+              },
+              {
+                  "a": {
+                      "type": "literal",
+                      "value": "http://example.org/twin/Agent_agent_008"
+                  },
+                  "n": {
+                      "type": "literal",
+                      "value": "33"
+                  }
+              }
+          ]
+      }
+  }
+
+## POST /twin/sparql  — geofence (predicted points outside lat[55.72,55.90] lon[37.58,37.80])
+  24 predicted points outside box (sample 3):
+    Obs_agent_001_600_0 55.71537 37.56216
+    Obs_agent_001_601_0 55.71536 37.56203
+    Obs_agent_001_602_0 55.71535 37.5619

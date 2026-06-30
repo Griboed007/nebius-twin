@@ -1,0 +1,18 @@
+# Part B - Registry-push -> Endpoint proof
+
+Captured: 2026-06-29
+Image:    cr.eu-north1.nebius.cloud/e00y0bsxm2b24wq5ra/spike:latest
+          (registry path = registry id WITHOUT the 'registry-' prefix)
+Endpoint: aiendpoint-e00xqnpgxsye5ahc84 (name spike-ep)  state=RUNNING
+Public:   http://195.242.31.24:8080   Platform cpu-e2 / 2vcpu-8gb
+
+## docker push (digest)
+latest: digest: sha256:4940e6dce268daabb91b188af463c8532d995afbf8da262de09dac25ae67c9db
+
+## GET /health  WITH auth token  (token redacted)
+$ curl -H "Authorization: Bearer <REDACTED>" http://195.242.31.24:8080/health
+HTTP 200  {"status":"ok"}
+
+## GET /health  WITHOUT token  (auth enforced)
+$ curl http://195.242.31.24:8080/health
+HTTP 401 Authorization Required (nginx)

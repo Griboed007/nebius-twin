@@ -1,0 +1,45 @@
+# Local container DoD — 040 batch job + 050 endpoint
+# Captured: 2026-06-30
+#
+# This proves the Dockerfiles + entrypoints run end-to-end as CONTAINERS
+# (beyond the pytest layer), env-driven, with the endpoint serving the twin
+# the job produced. It is NOT the Nebius live seam (real Job/Endpoint on the
+# platform, which spends the $100 credit) — that remains operator-run via
+# deploy/job.sh + deploy/endpoint.sh with a populated .env, then teardown.
+#
+# Note: the broken WSL docker-credential-desktop helper was bypassed with an
+# empty DOCKER_CONFIG (anonymous public-image pulls need no creds).
+
+## 040 — twin-job:dod
+Built from services/batch_job/Dockerfile (context = repo root).
+Run: docker run --rm -v <work>:/data -e INPUT_URI=/data/in.parquet -e OUTPUT_URI=/data/out twin-job:dod
+Result (exit 0), artifacts written to the mounted volume by the container:
+  - enriched.parquet  3000 rows
+    columns = [agent_id, t, lat, lon, vlat, vlon, pred_lat, pred_lon, anomaly_score, is_anomaly, kind]
+    == contracts/schema.py TRAJECTORY_COLUMNS + ENRICHED_EXTRA_COLUMNS  (exact)
+  - twin.ttl          24380 triples
+    orphan-check SPARQL -> 0 rows ; saref:Observation nodes = 3060 ; saref:Measurement = 0
+  - metrics.json      {agent_count:10, observation_count:3000, anomaly_count:218,
+                       runtime_seconds:0.97, roc_auc:0.8247}
+
+## 050 — twin-api:dod
+Built from services/twin_api/Dockerfile (context = repo root).
+Run: docker run -d -p 18080:8080 -v <work>/out:/data -e TWIN_TTL_PATH=/data/twin.ttl
+     -e ENDPOINT_AUTH_TOKEN=<redacted> twin-api:dod   (served the job's twin.ttl)
+Live HTTP results (token redacted):
+  GET  /health                       -> 200 {"status":"ok","model_loaded":true,"twin_loaded":true}
+  POST /predict   (valid + token)    -> 200
+  POST /predict   (no token)         -> 401   (auth before inference)
+  POST /twin/sparql SELECT rollup    -> 200 {"head":{"vars":["n"]},"results":{"bindings":[{"n":{"type":"literal","value":"3060"}}]}}
+  POST /twin/sparql SERVICE (upper)  -> 400   (federation/SSRF rejected, algebra-based)
+  POST /twin/sparql service (lower)  -> 400   (case-insensitive)
+  POST /twin/sparql INSERT DATA      -> 400   (mutation rejected)
+  POST /twin/sparql (no token)       -> 401
+  GET  /twin/state?agent_id=agent_001        -> 200
+  GET  /twin/state?agent_id=<SERVICE inj.>   -> 404   (initBindings: injection inert, 0 outbound)
+Container torn down after capture (docker rm -f).
+
+## Status
+Local container DoD: PASS for both services.
+Nebius live DoD: PENDING operator run (needs .env secrets + explicit credit-spend
+authorization). Platform primitives already proven in part-a-job.txt / part-b-endpoint.txt.
