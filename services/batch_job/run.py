@@ -40,6 +40,8 @@ import json
 import logging
 import os
 import pathlib
+import shutil
+import tempfile
 import time
 from typing import Optional
 
@@ -248,42 +250,51 @@ def main() -> None:
             if gt_series is not None and i < len(gt_series):
                 score_pairs.append((pt.anomaly_score, bool(gt_series[i])))
 
-    # --- Write enriched.parquet with exact contract column order ---
-    df_enriched = pd.DataFrame(enriched_rows, columns=_ENRICHED_COLUMNS)
-    enriched_path = output_path / "enriched.parquet"
-    df_enriched.to_parquet(enriched_path, index=False, engine="pyarrow")
-    logger.info(
-        "Wrote enriched.parquet (%d rows, columns=%s)",
-        len(df_enriched),
-        list(df_enriched.columns),
-    )
+    # --- Stage all artifacts on LOCAL disk, then stream-copy to OUTPUT_URI ---
+    # OUTPUT_URI may be a FUSE object-storage mount (Nebius bucket). pyarrow and
+    # rdflib can write temp-then-rename, which object-storage FUSE handles poorly.
+    # So write everything to a local staging dir first (fast POSIX, real rename),
+    # then place each artifact onto OUTPUT_URI with shutil.copyfile — a pure
+    # sequential write with no rename. Local OUTPUT_URI just gets a cheap extra copy.
+    stage_dir = pathlib.Path(tempfile.mkdtemp(prefix="twinjob-"))
+    try:
+        # enriched.parquet (exact contract column order)
+        df_enriched = pd.DataFrame(enriched_rows, columns=_ENRICHED_COLUMNS)
+        df_enriched.to_parquet(stage_dir / "enriched.parquet", index=False, engine="pyarrow")
+        logger.info(
+            "Staged enriched.parquet (%d rows, columns=%s)",
+            len(df_enriched),
+            list(df_enriched.columns),
+        )
 
-    # --- Build and write twin.ttl ---
-    graph = build_graph(enriched_trajectories)
-    twin_path = output_path / "twin.ttl"
-    save_turtle(graph, twin_path)
-    logger.info("Wrote twin.ttl (%d triples)", len(graph))
+        # twin.ttl
+        graph = build_graph(enriched_trajectories)
+        save_turtle(graph, stage_dir / "twin.ttl")
+        logger.info("Staged twin.ttl (%d triples)", len(graph))
 
-    # --- Compute metrics ---
-    anomaly_count = int(df_enriched["is_anomaly"].sum()) if len(df_enriched) > 0 else 0
-    runtime_seconds = time.monotonic() - t_start
+        # metrics.json
+        anomaly_count = int(df_enriched["is_anomaly"].sum()) if len(df_enriched) > 0 else 0
+        runtime_seconds = time.monotonic() - t_start
+        metrics: dict = {
+            "agent_count": len(enriched_trajectories),
+            "observation_count": len(df_enriched),
+            "anomaly_count": anomaly_count,
+            "runtime_seconds": round(runtime_seconds, 3),
+        }
+        if has_labels:
+            _add_auc(metrics, score_pairs)
+        else:
+            metrics["label_note"] = "no labels — ROC-AUC not computed"
+        with open(stage_dir / "metrics.json", "w") as f:
+            json.dump(metrics, f, indent=2)
 
-    metrics: dict = {
-        "agent_count": len(enriched_trajectories),
-        "observation_count": len(df_enriched),
-        "anomaly_count": anomaly_count,
-        "runtime_seconds": round(runtime_seconds, 3),
-    }
-
-    if has_labels:
-        _add_auc(metrics, score_pairs)
-    else:
-        metrics["label_note"] = "no labels — ROC-AUC not computed"
-
-    metrics_path = output_path / "metrics.json"
-    with open(metrics_path, "w") as f:
-        json.dump(metrics, f, indent=2)
-    logger.info("Wrote metrics.json: %s", metrics)
+        # Stream-copy each staged artifact onto OUTPUT_URI (no rename → FUSE-safe).
+        for name in ("enriched.parquet", "twin.ttl", "metrics.json"):
+            shutil.copyfile(stage_dir / name, output_path / name)
+            logger.info("Copied %s -> %s", name, output_path / name)
+        logger.info("Wrote metrics.json: %s", metrics)
+    finally:
+        shutil.rmtree(stage_dir, ignore_errors=True)
 
 
 def _add_auc(metrics: dict, score_pairs: list[tuple[float, bool]]) -> None:

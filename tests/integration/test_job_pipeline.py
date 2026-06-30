@@ -161,6 +161,69 @@ def test_labelled_input_has_correct_per_point_scores(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Scenario 1b: FUSE-safe write — stage on local disk, stream-copy to OUTPUT_URI
+# ---------------------------------------------------------------------------
+
+def test_artifacts_staged_locally_then_stream_copied(tmp_path, monkeypatch):
+    """Artifacts are written to a LOCAL staging dir, then shutil.copyfile'd into
+    OUTPUT_URI — never written in-place and never placed via rename/move.
+
+    OUTPUT_URI may be a FUSE object-storage mount; some writers do
+    temp-write + rename, which FUSE handles poorly. Staging locally then a pure
+    sequential copy (copyfile, not move/rename) dodges that failure mode.
+    """
+    input_path = _write_canonical_fixture(tmp_path)
+    output_dir = tmp_path / "out_staged"
+    os.environ["INPUT_URI"] = str(input_path)
+    os.environ["OUTPUT_URI"] = str(output_dir)
+    os.environ.pop("MODEL_PATH", None)
+
+    import importlib
+    import shutil as _shutil
+    import services.batch_job.run as job_mod
+    importlib.reload(job_mod)
+
+    copied: list[tuple[str, str]] = []
+    real_copyfile = _shutil.copyfile
+
+    def spy_copyfile(src, dst, *a, **k):
+        copied.append((str(src), str(dst)))
+        return real_copyfile(src, dst, *a, **k)
+
+    moved: list = []
+    renamed_into_out: list = []
+    real_rename = os.rename
+
+    def spy_rename(src, dst, *a, **k):
+        if str(output_dir) in str(dst):
+            renamed_into_out.append((str(src), str(dst)))
+        return real_rename(src, dst, *a, **k)
+
+    monkeypatch.setattr(job_mod.shutil, "copyfile", spy_copyfile)
+    monkeypatch.setattr(job_mod.shutil, "move", lambda *a, **k: moved.append(a))
+    monkeypatch.setattr(job_mod.os, "rename", spy_rename)
+
+    job_mod.main()
+
+    artifacts = {"enriched.parquet", "twin.ttl", "metrics.json"}
+    copied_names = {pathlib.Path(d).name for _, d in copied}
+    assert artifacts.issubset(copied_names), (
+        f"not all artifacts were copyfile'd into OUTPUT_URI; copied={copied}"
+    )
+    for src, dst in copied:
+        if pathlib.Path(dst).name in artifacts:
+            assert pathlib.Path(dst).parent == output_dir, f"copied to wrong dest: {dst}"
+            assert pathlib.Path(src).parent != output_dir, (
+                f"artifact written in-place, not staged locally: {src}"
+            )
+    assert not moved, "shutil.move used for placement — rename-based, FUSE-unsafe"
+    assert not renamed_into_out, f"os.rename into OUTPUT_URI — FUSE-unsafe: {renamed_into_out}"
+
+    for name in artifacts:
+        assert (output_dir / name).exists(), f"{name} missing from OUTPUT_URI"
+
+
+# ---------------------------------------------------------------------------
 # Scenario 2: canonical-only input (no labels)
 # ---------------------------------------------------------------------------
 
